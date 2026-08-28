@@ -52,3 +52,29 @@ class Job(models.Model):
 
     def __str__(self):
         return f"{self.title} @ {self.employer}"
+
+class JobQualification(models.Model):
+    class Category(models.TextChoices):
+        LANGUAGE = 'language', 'Language'
+        EDUCATION = 'education', 'Education'
+        EXPERIENCE = 'experience', 'Experience'
+        AGE = 'age', 'Age'
+        CERTIFICATION = 'certification', 'Certification'
+
+    job = models.ForeignKey(
+        Job,
+        on_delete=models.CASCADE,
+        related_name='qualifications',
+    )
+    category = models.CharField(max_length=20, choices=Category.choices)
+    label = models.CharField(max_length=255)
+    min_value = models.IntegerField()
+    min_value_label = models.CharField(max_length=100, blank=True)
+
+    def clean(self):
+        if self.min_value is not None and self.min_value < 0:
+            raise ValidationError({'min_value': 'min_value cannot be negative.'})
+
+    def __str__(self):
+        display = self.min_value_label or self.min_value
+        return f"{self.job.title} — {self.label} (min {display})"
