@@ -6,6 +6,10 @@ from django.test import TestCase
 from accounts.models import User
 from jobs.models import Job, JobQualification
 
+from django.contrib.admin.sites import AdminSite
+from django.contrib.messages.storage.fallback import FallbackStorage
+from django.test import RequestFactory
+from jobs.admin import JobAdmin
 
 class JobValidationTests(TestCase):
     def setUp(self):
@@ -115,3 +119,54 @@ class JobQualificationValidationTests(TestCase):
             min_value_label='',
         )
         self.assertIn('18', str(qual))
+
+
+class JobAdminActionTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(
+            username='admin3', password='x', role=User.Role.ADMIN, is_staff=True
+        )
+        self.employer = User.objects.create_user(
+            username='emp20', password='x', role=User.Role.EMPLOYER
+        )
+        self.job = Job.objects.create(
+            employer=self.employer,
+            title='Housekeeper',
+            description='Hotel role',
+            country='Taiwan',
+            city='Taichung',
+            salary_min=Decimal('17000'),
+            salary_max=Decimal('20000'),
+            currency='TWD',
+            quota=1,
+            status=Job.Status.PENDING_REVIEW,
+        )
+        self.site = AdminSite()
+        self.model_admin = JobAdmin(Job, self.site)
+        self.factory = RequestFactory()
+
+    def _request(self):
+        request = self.factory.get('/admin/jobs/job/')
+        request.user = self.admin_user
+        setattr(request, 'session', {})
+        messages = FallbackStorage(request)
+        setattr(request, '_messages', messages)
+        return request
+
+    def test_approve_jobs_sets_status_and_audit_fields(self):
+        queryset = Job.objects.filter(pk=self.job.pk)
+        self.model_admin.approve_jobs(self._request(), queryset)
+
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.Status.LIVE)
+        self.assertEqual(self.job.reviewed_by, self.admin_user)
+        self.assertIsNotNone(self.job.reviewed_at)
+
+    def test_request_revision_sets_status_and_audit_fields(self):
+        queryset = Job.objects.filter(pk=self.job.pk)
+        self.model_admin.request_revision(self._request(), queryset)
+
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.Status.REVISION_REQUESTED)
+        self.assertEqual(self.job.reviewed_by, self.admin_user)
+        self.assertIsNotNone(self.job.reviewed_at)
